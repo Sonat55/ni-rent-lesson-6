@@ -1,3 +1,6 @@
+import argparse
+import sys
+
 from src.manager import Manager
 from src.models import Parameters
 
@@ -63,11 +66,50 @@ def display_tenants(manager):
                 print(f"      • {format_currency(transfer.amount_pln):>15}  Date: {transfer.date}  Period: {month_year}")
 
 
-if __name__ == '__main__':
-    parameters = Parameters()
-    manager = Manager(parameters)
+def display_settlement(manager, apartment_key: str, year: int, month: int) -> bool:
+    """Display the settlement of one apartment for one month. Returns False on error."""
+    try:
+        settlement = manager.get_settlement(apartment_key, year, month)
+    except ValueError as error:
+        print(f"Error: {error}", file=sys.stderr)
+        return False
+    if settlement is None:
+        print(f"Error: unknown apartment '{apartment_key}'. "
+              f"Available: {', '.join(manager.apartments)}", file=sys.stderr)
+        return False
 
-    display_apartments(manager)
-    display_tenants(manager)
-    
+    print_section_header(f"SETTLEMENT {apartment_key} {month:02d}/{year}")
+    print(f"\n  Total due: {format_currency(settlement.total_due_pln)}")
+
+    tenant_settlements = manager.create_tenants_settlements(settlement) or []
+    print_subsection_header("Per tenant")
+    if not tenant_settlements:
+        print("      (no tenants in this apartment)")
+    for tenant_settlement in tenant_settlements:
+        print(f"      • {tenant_settlement.tenant:<25} {format_currency(tenant_settlement.total_due_pln):>15}")
+
+    debtors = manager.get_debtors(apartment_key, month, year) or []
+    print_subsection_header("Debtors")
+    if debtors:
+        for name in debtors:
+            print(f"      • {name}")
+    else:
+        print("      (none)")
+    return True
+
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Show the rent settlement for an apartment and month.")
+    parser.add_argument("apartment", help="apartment key, e.g. apartment-1")
+    parser.add_argument("year", type=int, help="settlement year, e.g. 2024")
+    parser.add_argument("month", type=int, help="settlement month (1-12)")
+    return parser.parse_args(argv)
+
+
+if __name__ == '__main__':
+    args = parse_args()
+    manager = Manager(Parameters())
+    ok = display_settlement(manager, args.apartment, args.year, args.month)
     print(f"\n{'=' * 70}\n")
+    sys.exit(0 if ok else 1)
